@@ -24,7 +24,7 @@ Punkte und Trefferquote liegen lokal in `localStorage`.
 - `sim.js`: Simulation (Ballwechsel, Läufer, Punktestand)
 - `stats.js`: Fortschritt
 - `ui.js`: Menü und Modi 1, 4, 5
-- `rules.test.js`, `plans.test.js`, `sim.test.js`: Tests, `for f in rules plans sim; do node $f.test.js; done`
+- `rules.test.js`, `plans.test.js`, `sim.test.js`, `audit.test.js`: Tests, `for f in rules plans sim audit; do node $f.test.js; done`
 
 ## Hinweise zu den Regeln
 Grundlage ist das Plan-PDF (5-1). Der Ideal-Stack wird berechnet: Jeder Spieler soll möglichst nah an seine Position nach dem Wechsel,
