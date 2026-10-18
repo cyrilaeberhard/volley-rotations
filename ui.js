@@ -28,14 +28,6 @@
   const linksFor = (pos, violations) => violations.map((v) => ({
     x1: pos[v.rule.a].x, y1: pos[v.rule.a].y, x2: pos[v.rule.b].x, y2: pos[v.rule.b].y, cls: 'bad',
   }));
-  // Alle Überlappungsregeln als Linien (ausser Aufschläger ausserhalb); verletzte rot.
-  const ruleLinks = (pos, violations, serving) => {
-    const exempt = serving && pos[1].y > VR.COURT.depth;
-    const badRules = new Set(violations.map((v) => v.rule));
-    return R.OVERLAP.filter((r) => !(exempt && (r.a === 1 || r.b === 1))).map((r) => ({
-      x1: pos[r.a].x, y1: pos[r.a].y, x2: pos[r.b].x, y2: pos[r.b].y, cls: badRules.has(r) ? 'bad' : 'rule',
-    }));
-  };
   const options = () => ({ libero: state.libero, ds: state.ds });
   const record = (ok) => { VR.stats.record(state.system, state.rot, ok); renderScore(); };
 
@@ -45,13 +37,12 @@
     const serving = state.phase === 'serve';
     let pos = startPositions(state.phase);
     let bad = new Set();
-    let violations = [];
-    let showRules = false;
+    let lines = [];
 
     const draw = () => {
       court.setTokens(R.tokensFor(sys, state.rot, state.phase, pos, options())
         .map((t) => ({ ...t, movable: true, status: bad.has(t.slot) ? 'bad' : '' })));
-      court.setOverlay({ lines: showRules ? ruleLinks(pos, violations, serving) : linksFor(pos, violations) });
+      court.setOverlay({ lines });
     };
     const message = (html) => { panel.querySelector('.feedback').innerHTML = html; };
 
@@ -59,30 +50,24 @@
       <p>${sys.name} · Rotation ${state.rot} · ${phaseName(state.phase)}</p>
       <p>Zieh alle sechs Spieler auf legale Plätze.</p>
       <details><summary>Hinweise</summary><p>Die Zahl am Spieler ist seine Position in der Rotation. Tipp: Spieler antippen zeigt den Namen.${serving ? ' Der Aufschläger darf in die Aufschlagzone, für ihn gilt keine Überlappungsregel.' : ''}</p></details>
-      <div class="row"><button type="button" id="check" class="primary">Prüfen</button><button type="button" id="solution">Lösung zeigen</button><button type="button" id="reset">Zurücksetzen</button></div>
+      <div class="row"><button type="button" id="check" class="primary">Prüfen</button><button type="button" id="reset">Zurücksetzen</button></div>
       <div class="feedback"></div>`;
 
     handler = (slot, p, final) => {
       pos = { ...pos, [slot]: p };
-      if (final) { bad = new Set(); violations = []; showRules = false; draw(); message(''); }
+      if (final) { bad = new Set(); lines = []; draw(); message(''); }
     };
     panel.querySelector('#check').addEventListener('click', () => {
       const res = R.checkFormation(pos, { serving });
       bad = new Set(res.violations.flatMap((v) => [v.rule.a, v.rule.b]));
-      violations = res.violations;
-      showRules = false;
+      lines = linksFor(pos, res.violations);
       draw();
       record(res.legal);
       message(res.legal
         ? `<p class="ok">Legal. ${res.serverExempt ? 'Der Aufschläger steht außerhalb und ist ausgenommen.' : 'Alle Nachbarn stehen in der richtigen Reihenfolge.'}</p>`
         : `<p class="bad">Fehlstellung:</p><ul>${res.violations.map((v) => `<li>${v.text}</li>`).join('')}</ul>`);
     });
-    panel.querySelector('#solution').addEventListener('click', () => {
-      violations = R.checkFormation(pos, { serving }).violations;
-      showRules = true;
-      draw();
-    });
-    panel.querySelector('#reset').addEventListener('click', () => { pos = startPositions(state.phase); bad = new Set(); violations = []; showRules = false; draw(); message(''); });
+    panel.querySelector('#reset').addEventListener('click', () => { pos = startPositions(state.phase); bad = new Set(); lines = []; draw(); message(''); });
     draw();
   }
 
