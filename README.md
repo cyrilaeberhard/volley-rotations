@@ -9,6 +9,7 @@ Reine statische Dateien: `index.html` per Doppelklick öffnen, kein Build, kein 
 3. **Rotationsquiz**: Rotation, Libero, Regel-Aussagen.
 4. **Stack & Switch**: Stack stellen (grün/gelb/rot), danach Wechsel nach dem Aufschlag.
 5. **Lernmodus**: Film der Abläufe. Stack, Übergang, Angriffsbereit, Absicherung, Wechsel, Abwehr; danach Side-out mit Drehung und Aufschlag in der nächsten Rotation. 5-1 exakt nach dem Plan-PDF, 6-2 und 4-2 berechnet. Annehmer sind gelb umrandet (immer drei).
+6. **Simulation**: Live-Ballwechsel mit sichtbarem Ball. Aufschlag, Annahme, Zuspiel, Angriff, Absicherung, Punktestand, Side-out mit Drehung. Ausgang zufällig oder erzwungen, Tempo wählbar.
 
 Menü: System, Rotation, Phase (Aufschlag/Annahme), Libero, DS, Stufe, Zeitlimit.
 Punkte und Trefferquote liegen lokal in `localStorage`.
@@ -20,9 +21,10 @@ Punkte und Trefferquote liegen lokal in `localStorage`.
 - `rules.js`: Regel-Engine ohne UI (Rotation, Überlappung, Ideal-Stack, Zufallsaufstellungen)
 - `court.js`: SVG-Feld mit Drag-and-drop
 - `quiz.js`: Quiz-Modi 2 und 3
+- `sim.js`: Simulation (Ballwechsel, Läufer, Punktestand)
 - `stats.js`: Fortschritt
 - `ui.js`: Menü und Modi 1, 4, 5
-- `rules.test.js`, `plans.test.js`: Tests, `node rules.test.js && node plans.test.js`
+- `rules.test.js`, `plans.test.js`, `sim.test.js`: Tests, `for f in rules plans sim; do node $f.test.js; done`
 
 ## Hinweise zu den Regeln
 Grundlage ist das Plan-PDF (5-1). Der Ideal-Stack wird berechnet: Jeder Spieler soll möglichst nah an seine Position nach dem Wechsel,

@@ -60,7 +60,25 @@
     }));
   }
 
-  const api = { planFor, idealFor, stepTokens };
+  // Haltungen für die Simulation: stack, ready (angriffsbereit), cover (Absicherung), defense (Grundposition Abwehr).
+  function posesFor(system, rot, phase) {
+    const plan = planFor(system, rot, phase);
+    const at = (i) => plan.steps[Math.min(i, plan.steps.length - 1)].pos;
+    if (phase === 'receive') {
+      return plan.source === 'PDF'
+        ? { stack: at(0), ready: at(2), cover: at(3), defense: at(5) }
+        : { stack: at(0), ready: at(1), cover: at(2), defense: at(2) };
+    }
+    return { stack: at(0), ready: at(2), cover: at(2), defense: at(2) };
+  }
+
+  // Berechnete Angriffs- und Abwehrpunkte je Rolle (für Ballwechsel nach dem ersten Kontakt).
+  function spotsByRole(system, rot) {
+    const ids = R.lineupFor(system, rot);
+    return { ready: byRole(ids, R.targetSpots(system, ids, 'receive')), defense: byRole(ids, R.targetSpots(system, ids, 'serve')) };
+  }
+
+  const api = { planFor, idealFor, stepTokens, posesFor, spotsByRole };
   if (node) module.exports = api;
   else globalThis.VR = Object.assign(globalThis.VR || {}, api);
 })();

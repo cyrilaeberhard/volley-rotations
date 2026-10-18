@@ -134,14 +134,19 @@
   }
 
   // Wechsel nach dem Aufschlag-Kontakt: Zielpunkte und Reihenwechsel prüfen.
-  function gradeSwitch(system, ids, phase, pos, radius = 1.2) {
-    const t = targetSpots(system, ids, phase);
-    const far = SLOTS.filter((s) => dist(pos[s], t[s]) > radius);
+  // targets: die angezeigte Lösung (Plan-PDF oder berechnet). Geprüft wird immer gegen genau diese Punkte.
+  const WRONG_ROW_MARGIN = 0.4;
+  const inWrongRow = (slot, y) => (isFront(slot)
+    ? y > COURT.attackLine + WRONG_ROW_MARGIN
+    : y < COURT.attackLine - WRONG_ROW_MARGIN);
+
+  function gradeSwitch(system, ids, phase, pos, radius = 1.2, targets = targetSpots(system, ids, phase)) {
+    const far = SLOTS.filter((s) => dist(pos[s], targets[s]) > radius);
     const rowChanges = SLOTS.filter((s) => {
-      if (isSetting(system, ids[s - 1], s) && !isFront(s)) return false; // zustellende Hinterspielerin darf nach vorn laufen
-      return isFront(s) !== (pos[s].y < COURT.attackLine);
+      if (isSetting(system, ids[s - 1], s) && !isFront(s)) return false; // zuspielender Hinterspieler darf nach vorn laufen
+      return inWrongRow(s, pos[s].y) && !inWrongRow(s, targets[s].y); // Lösung selbst darf nie bemängelt werden
     });
-    return { ok: far.length === 0 && rowChanges.length === 0, far, rowChanges, targets: t };
+    return { ok: far.length === 0 && rowChanges.length === 0, far, rowChanges, targets };
   }
 
   // ---------- Zufall ----------

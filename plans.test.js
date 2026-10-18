@@ -35,4 +35,20 @@ assert.deepEqual(ideal.targets[4], PDF_PLANS['3-receive'].steps[2].pos.M1);
 const tokens = P.stepTokens(sys51, 3, 'receive', P.planFor(sys51, 3, 'receive').steps[0], { libero: true });
 assert.equal(tokens.length, 6);
 assert.ok(tokens.some((t) => t.key === 'M2' && t.kind === 'libero'));
+// Die angezeigte Lösung muss die eigene Prüfung bestehen (Stack und Wechsel), für alle Systeme.
+Object.values(D.SYSTEMS).forEach((sys) => {
+  for (let rot = 1; rot <= 6; rot += 1) {
+    ['serve', 'receive'].forEach((phase) => {
+      const label = `${sys.id} R${rot} ${phase}`;
+      const ideal = P.idealFor(sys, rot, phase);
+      assert.equal(R.checkFormation(ideal.pos, { serving: phase === 'serve' }).legal, true, `${label}: Stack-Lösung illegal`);
+      assert.equal(R.gradeStack(ideal.pos, ideal.pos).near, true, `${label}: Stack-Lösung nicht grün`);
+      const sw = R.gradeSwitch(sys, ideal.ids, phase, ideal.targets, 1.2, ideal.targets);
+      assert.equal(sw.ok, true, `${label}: Wechsel-Lösung besteht Prüfung nicht ${JSON.stringify(sw.far)} ${JSON.stringify(sw.rowChanges)}`);
+      // Kleine Abweichung (0,8 m) bleibt grün.
+      const shifted = Object.fromEntries(R.SLOTS.map((s) => [s, { x: ideal.targets[s].x + 0.5, y: ideal.targets[s].y + 0.6 }]));
+      assert.equal(R.gradeSwitch(sys, ideal.ids, phase, shifted, 1.2, ideal.targets).far.length, 0, `${label}: Toleranz`);
+    });
+  }
+});
 console.log('plans.test.js: alle Checks ok');

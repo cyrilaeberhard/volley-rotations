@@ -37,6 +37,9 @@
     const overlay = node('g', { class: 'overlay' }, svg);
     const tokenLayer = node('g', {}, svg);
     const tokens = new Map();
+    const ballLayer = node('g', { class: 'ball-layer', display: 'none' }, svg);
+    const shadow = node('ellipse', { rx: 0.3, ry: 0.15, class: 'ball-shadow' }, ballLayer);
+    const ball = node('circle', { r: 0.3, class: 'ball' }, ballLayer);
     let drag = null;
 
     function place(g, x, y) {
@@ -71,6 +74,17 @@
         title.textContent = `${t.name || t.text} (Position ${t.slot})`;
         place(g, t.x, t.y);
       });
+    }
+
+    // Ball: x/y am Boden, z = Höhe in Metern (wird nach oben versetzt gezeichnet). null versteckt ihn.
+    function setBall(b) {
+      ballLayer.setAttribute('display', b ? '' : 'none');
+      if (!b) return;
+      shadow.setAttribute('cx', b.x);
+      shadow.setAttribute('cy', b.y);
+      ball.setAttribute('cx', b.x);
+      ball.setAttribute('cy', b.y - b.z * 0.3);
+      ball.setAttribute('r', 0.3 + 0.025 * b.z);
     }
 
     function setOverlay({ ghosts = [], lines = [] } = {}) {
@@ -115,7 +129,7 @@
     svg.addEventListener('pointerup', end);
     svg.addEventListener('pointercancel', end);
 
-    return { setTokens, setOverlay };
+    return { setTokens, setOverlay, setBall };
   }
 
   globalThis.VR = Object.assign(globalThis.VR || {}, { createCourt });

@@ -10,6 +10,7 @@
     { id: 3, name: 'Rotationsquiz' },
     { id: 4, name: 'Stack & Switch' },
     { id: 5, name: 'Lernmodus' },
+    { id: 6, name: 'Simulation' },
   ];
   const phaseName = (p) => (p === 'serve' ? 'Aufschlag' : 'Annahme');
 
@@ -144,7 +145,7 @@
     }
 
     function checkSwitch() {
-      const res = R.gradeSwitch(sys, ids, state.phase, pos);
+      const res = R.gradeSwitch(sys, ids, state.phase, pos, 1.2, ideal.targets);
       bad = new Set([...res.far, ...res.rowChanges]);
       ghosts = res.ok ? [] : ghostList(res.targets);
       draw(); record(res.ok);
@@ -231,12 +232,64 @@
     show();
   }
 
+  // ---------- Modus 6: Simulation ----------
+  function modeSim() {
+    const sys = SYSTEMS[state.system];
+    const lines = [];
+    let raf = 0;
+    let last = 0;
+    court.setOverlay({});
+    const infoText = (rot, phase) => `Rotation ${rot} · ${phase === 'serve' ? 'wir schlagen auf' : 'Gegner schlägt auf'}`;
+
+    panel.innerHTML = `<h2>Simulation</h2>
+      <p class="meta">${sys.name}. Der Ball fliegt, alle laufen: Aufschlag, Annahme, Zuspiel, Angriff, Absicherung. Nach einem Punkt bei Annahme dreht das Team (Side-out).</p>
+      <div class="scoreboard"><strong id="simScore">Wir 0 : 0 Gegner</strong><span id="simInfo">${infoText(state.rot, state.phase)}</span></div>
+      <div class="row">
+        <button type="button" id="pause">⏸ Pause</button>
+        <label>Tempo <select id="speed"><option value="0.5">0,5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label>
+        <label>Ausgang <select id="forced"><option value="auto">zufällig</option><option value="us">wir punkten</option><option value="them">Gegner punktet</option></select></label>
+      </div>
+      <div class="row"><button type="button" id="skip">Ballwechsel überspringen</button><button type="button" id="restart">Neu starten</button></div>
+      <ol id="simLog" class="log"></ol>`;
+    const logEl = panel.querySelector('#simLog');
+    const onLog = (text) => {
+      lines.unshift(text);
+      lines.length = Math.min(lines.length, 8);
+      logEl.innerHTML = lines.map((l) => `<li>${l}</li>`).join('');
+    };
+    const sim = VR.createSim({
+      court, system: sys, rot: state.rot, phase: state.phase, opts: options(), onLog,
+      onScore: (r) => {
+        panel.querySelector('#simScore').textContent = `Wir ${r.us} : ${r.them} Gegner`;
+        panel.querySelector('#simInfo').textContent = infoText(r.rot, r.phase);
+      },
+    });
+    panel.querySelector('#pause').addEventListener('click', (e) => {
+      sim.setPaused(!sim.state.paused);
+      e.target.textContent = sim.state.paused ? '▶ Weiter' : '⏸ Pause';
+    });
+    panel.querySelector('#speed').addEventListener('change', (e) => sim.setSpeed(Number(e.target.value)));
+    panel.querySelector('#forced').addEventListener('change', (e) => sim.setForced(e.target.value));
+    panel.querySelector('#skip').addEventListener('click', () => sim.skip());
+    panel.querySelector('#restart').addEventListener('click', () => setState({}));
+
+    const loop = (ts) => {
+      sim.tick(last ? (ts - last) / 1000 : 0);
+      last = ts;
+      raf = requestAnimationFrame(loop);
+    };
+    cleanup = () => cancelAnimationFrame(raf);
+    handler = null;
+    sim.start();
+    raf = requestAnimationFrame(loop);
+  }
+
   // ---------- Menü ----------
   function renderMenu() {
     const s = state;
     const sys = SYSTEMS[s.system];
     $('#modes').innerHTML = MODES.map((m) => `<button type="button" data-mode="${m.id}" class="${m.id === s.mode ? 'on' : ''}">${m.name}</button>`).join('');
-    const showRot = [1, 4, 5].includes(s.mode);
+    const showRot = [1, 4, 5, 6].includes(s.mode);
     const showPhase = s.mode !== 3;
     const showLevel = s.mode === 2 || s.mode === 3;
     const dsIds = [...new Set(sys.base)].filter((id) => PLAYERS[id].pair !== 'middle');
@@ -264,6 +317,7 @@
     if (m === 1) modeFormation();
     else if (m === 4) modeStack();
     else if (m === 5) modeLearn();
+    else if (m === 6) modeSim();
     else {
       cleanup = VR.startQuiz(m === 2 ? 'legal' : 'rotation', {
         state, court, panel, onScore: (sysId, rot, ok) => { VR.stats.record(sysId || state.system, rot, ok); renderScore(); },
