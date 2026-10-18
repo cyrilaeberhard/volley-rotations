@@ -64,8 +64,7 @@
 
     handler = (slot, p, final) => {
       pos = { ...pos, [slot]: p };
-      if (final) { bad = new Set(); violations = []; checked = false; message(''); }
-      draw();
+      if (final) { bad = new Set(); violations = []; checked = false; draw(); message(''); }
     };
     panel.querySelector('#check').addEventListener('click', () => {
       const res = R.checkFormation(pos, { serving });
