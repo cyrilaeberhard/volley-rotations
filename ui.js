@@ -1,0 +1,315 @@
+// Menü, Modus-Steuerung und die Übungsmodi 1 (Formation legen), 4 (Stack & Switch), 5 (Lernmodus).
+(function () {
+  const R = VR;
+  const { SYSTEMS, PLAYERS, HOME_CELLS, SERVE_SPOT } = VR;
+  const $ = (sel) => document.querySelector(sel);
+
+  const MODES = [
+    { id: 1, name: 'Formation legen' },
+    { id: 2, name: 'Legal oder Fehler' },
+    { id: 3, name: 'Rotationsquiz' },
+    { id: 4, name: 'Stack & Switch' },
+    { id: 5, name: 'Lernmodus' },
+  ];
+  const phaseName = (p) => (p === 'serve' ? 'Aufschlag' : 'Annahme');
+
+  let state = { mode: 1, system: '5-1', rot: 1, phase: 'receive', libero: true, ds: '', level: 'leicht', timer: false };
+  let cleanup = () => {};
+  let handler = null;
+  const court = VR.createCourt($('#court'), (slot, p, final) => { if (handler) handler(slot, p, final); });
+  const panel = $('#panel');
+
+  const lineText = (ids, opts, phase) => R.SLOTS
+    .map((slot) => `Pos. ${slot}: ${R.displayLabel(ids[slot - 1], slot, phase, opts).text}`).join(' · ');
+  const startPositions = (phase) => ({
+    ...Object.fromEntries(R.SLOTS.map((slot) => [slot, { ...HOME_CELLS[slot] }])),
+    ...(phase === 'serve' ? { 1: { ...SERVE_SPOT } } : {}),
+  });
+  const linksFor = (pos, violations) => violations.map((v) => ({
+    x1: pos[v.rule.a].x, y1: pos[v.rule.a].y, x2: pos[v.rule.b].x, y2: pos[v.rule.b].y, cls: 'bad',
+  }));
+  const options = () => ({ libero: state.libero, ds: state.ds });
+  const record = (ok) => { VR.stats.record(state.system, state.rot, ok); renderScore(); };
+
+  // ---------- Modus 1: Formation legen ----------
+  function modeFormation() {
+    const sys = SYSTEMS[state.system];
+    const serving = state.phase === 'serve';
+    let pos = startPositions(state.phase);
+    let bad = new Set();
+    let lines = [];
+
+    const draw = () => {
+      court.setTokens(R.tokensFor(sys, state.rot, state.phase, pos, options())
+        .map((t) => ({ ...t, movable: true, status: bad.has(t.slot) ? 'bad' : '' })));
+      court.setOverlay({ lines });
+    };
+    const message = (html) => { panel.querySelector('.feedback').innerHTML = html; };
+    const ids = R.lineupFor(sys, state.rot);
+
+    panel.innerHTML = `<h2>Formation legen</h2>
+      <p>${sys.name}, Rotation ${state.rot}, ${phaseName(state.phase)}.<br>${lineText(ids, options(), state.phase)}</p>
+      <p>Zieh alle sechs Spieler so, dass die Aufstellung legal ist. Die Zahl am Spieler ist seine Position in der Rotation.
+      ${serving ? 'Der Aufschläger (Pos. 1) darf hinter die Endlinie in die Aufschlagzone gehen. Dann gilt für ihn keine Überlappungsregel.' : ''}</p>
+      <div class="row"><button type="button" id="check" class="primary">Prüfen</button><button type="button" id="reset">Zurücksetzen</button></div>
+      <div class="feedback"></div>`;
+
+    handler = (slot, p, final) => {
+      pos = { ...pos, [slot]: p };
+      if (final) { bad = new Set(); lines = []; draw(); message(''); }
+    };
+    panel.querySelector('#check').addEventListener('click', () => {
+      const res = R.checkFormation(pos, { serving });
+      bad = new Set(res.violations.flatMap((v) => [v.rule.a, v.rule.b]));
+      lines = linksFor(pos, res.violations);
+      draw();
+      record(res.legal);
+      message(res.legal
+        ? `<p class="ok">Legal. ${res.serverExempt ? 'Der Aufschläger steht außerhalb und ist ausgenommen.' : 'Alle Nachbarn stehen in der richtigen Reihenfolge.'}</p>`
+        : `<p class="bad">Fehlstellung:</p><ul>${res.violations.map((v) => `<li>${v.text}</li>`).join('')}</ul>`);
+    });
+    panel.querySelector('#reset').addEventListener('click', () => { pos = startPositions(state.phase); bad = new Set(); lines = []; draw(); message(''); });
+    draw();
+  }
+
+  // ---------- Modus 4: Stack & Switch ----------
+  function modeStack() {
+    const sys = SYSTEMS[state.system];
+    const serving = state.phase === 'serve';
+    const ideal = VR.idealFor(sys, state.rot, state.phase);
+    const ids = ideal.ids;
+    const anchorLabel = R.displayLabel(ids[ideal.anchor - 1], ideal.anchor, state.phase, options()).text;
+    const switchTarget = serving ? 'Verteidigung' : 'Angriff';
+    let step = 'stack';
+    let pos = startPositions(state.phase);
+    let bad = new Set();
+    let lines = [];
+    let ghosts = [];
+
+    const draw = () => {
+      court.setTokens(R.tokensFor(sys, state.rot, state.phase, pos, options())
+        .map((t) => ({ ...t, movable: true, status: bad.has(t.slot) ? 'bad' : '' })));
+      court.setOverlay({ lines, ghosts });
+    };
+    const ghostList = (spots) => R.SLOTS.map((slot) => ({
+      ...spots[slot], text: R.displayLabel(ids[slot - 1], slot, state.phase, options()).text,
+    }));
+    const message = (html) => { panel.querySelector('.feedback').innerHTML = html; };
+
+    function renderPanel() {
+      const hint = serving
+        ? `Aufschlag: Stack um die vordere Mitte (${anchorLabel}), sie soll zum Block bereit bleiben. Der Aufschläger steht hinter der Endlinie.`
+        : `Annahme: Stack um ${anchorLabel}. ${ideal.anchor === R.SLOTS.find((s) => R.isSetting(sys, ids[s - 1], s)) ? 'Der Zuspieler soll nah an seinem Zuspielpunkt starten.' : 'Der Zuspieler steht auf 4 oder 5, darum hat die vordere Außenangreiferin Vorrang und bleibt nah an Links-vorne.'}`;
+      panel.innerHTML = step === 'stack'
+        ? `<h2>Schritt 1: Stack stellen</h2><p>${sys.name}, Rotation ${state.rot}, ${phaseName(state.phase)}.<br>${lineText(ids, options(), state.phase)}</p>
+           <p>${hint}</p><p>Legal und innerhalb 1,5 m vom Ideal: grün. Legal, aber weiter weg: gelb.</p>
+           <div class="row"><button type="button" id="check" class="primary">Stack prüfen</button><button type="button" id="show">Ideal zeigen</button><button type="button" id="reset">Zurücksetzen</button></div>
+           <div class="feedback"></div>`
+        : `<h2>Schritt 2: Wechsel (${switchTarget})</h2>
+           <p>Der Aufschläger hat den Ball berührt. Zieh jeden Spieler auf seine ${switchTarget}-Position. Bleib in deiner Reihe (vorn oder hinten).</p>
+           <div class="row"><button type="button" id="check" class="primary">Wechsel prüfen</button><button type="button" id="show">Lösung zeigen</button><button type="button" id="back">Zurück zum Stack</button></div>
+           <div class="feedback"></div>`;
+      bind();
+    }
+
+    function bind() {
+      const q = (sel) => panel.querySelector(sel);
+      q('#check').addEventListener('click', step === 'stack' ? checkStack : checkSwitch);
+      q('#show').addEventListener('click', () => { ghosts = ghostList(step === 'stack' ? ideal.pos : ideal.targets); draw(); });
+      if (q('#reset')) q('#reset').addEventListener('click', () => { pos = startPositions(state.phase); bad = new Set(); lines = []; ghosts = []; draw(); message(''); });
+      if (q('#back')) q('#back').addEventListener('click', () => { step = 'stack'; bad = new Set(); lines = []; ghosts = []; renderPanel(); draw(); });
+    }
+
+    function checkStack() {
+      const res = R.checkFormation(pos, { serving });
+      bad = new Set(res.violations.flatMap((v) => [v.rule.a, v.rule.b]));
+      lines = linksFor(pos, res.violations);
+      ghosts = [];
+      if (!res.legal) {
+        draw(); record(false);
+        message(`<p class="bad">Rot: Fehlstellung.</p><ul>${res.violations.map((v) => `<li>${v.text}</li>`).join('')}</ul>`);
+        return;
+      }
+      const grade = R.gradeStack(pos, ideal.pos);
+      if (grade.near) {
+        draw(); record(true);
+        message('<p class="ok">Grün: legal und ein guter Stack.</p><button type="button" id="go" class="primary">Weiter zum Wechsel</button>');
+        panel.querySelector('#go').addEventListener('click', () => { step = 'switch'; bad = new Set(); lines = []; renderPanel(); draw(); });
+      } else {
+        ghosts = ghostList(ideal.pos);
+        bad = new Set(grade.far);
+        draw(); record(false);
+        message(`<p class="warn">Gelb: legal, aber weiter vom Stack im Plan weg (Positionen ${grade.far.join(', ')}). Die gestrichelten Kreise zeigen eine mögliche Variante, es gibt mehrere gute Stacks.</p>`);
+      }
+    }
+
+    function checkSwitch() {
+      const res = R.gradeSwitch(sys, ids, state.phase, pos);
+      bad = new Set([...res.far, ...res.rowChanges]);
+      ghosts = res.ok ? [] : ghostList(res.targets);
+      draw(); record(res.ok);
+      message(res.ok
+        ? '<p class="ok">Alle Spieler stehen auf ihrer Position nach dem Wechsel.</p>'
+        : `<p class="bad">${res.far.length ? `Zu weit vom Ziel weg: Position ${res.far.join(', ')}. ` : ''}${res.rowChanges.length ? `Reihenwechsel (vorn/hinten) bei Position ${res.rowChanges.join(', ')}: nicht verboten, aber du verlierst Block- und Angriffsrechte.` : ''}</p>`);
+    }
+
+    handler = (slot, p, final) => {
+      pos = { ...pos, [slot]: p };
+      if (final) { bad = new Set(); lines = []; ghosts = []; draw(); message(''); }
+    };
+    renderPanel();
+    draw();
+  }
+
+  // ---------- Modus 5: Lernmodus (Film) ----------
+  const HOLD_MS = 5200;
+
+  function modeLearn() {
+    const sys = SYSTEMS[state.system];
+    let seg = { rot: state.rot, phase: state.phase };
+    let idx = 0;
+    let note = '';
+    let playing = false;
+    let timer = null;
+    cleanup = () => { playing = false; clearTimeout(timer); };
+
+    const plan = () => VR.planFor(sys, seg.rot, seg.phase);
+
+    function show(duration = 1.0) {
+      const p = plan();
+      const step = p.steps[idx];
+      court.setTokens(VR.stepTokens(sys, seg.rot, seg.phase, step, options(), duration));
+      court.setOverlay({});
+      const ids = R.lineupFor(sys, seg.rot);
+      const chips = p.steps.map((s, i) => `<button type="button" data-step="${i}" class="${i === idx ? 'on' : ''}">${i + 1}</button>`).join('');
+      panel.innerHTML = `<h2>${step.title}</h2>
+        <p class="meta">${sys.name} · Rotation ${seg.rot} · ${phaseName(seg.phase)} · ${p.source === 'PDF' ? 'nach Plan-PDF' : 'berechnet'}<br>${lineText(ids, options(), seg.phase)}</p>
+        ${note && idx === 0 ? `<p class="note">${note}</p>` : ''}
+        <p>${step.caption}</p>
+        ${step.passers.length ? `<p class="meta">Gelb umrandet: nehmen an (${step.passers.map((r) => PLAYERS[r].label).join(', ')}). Es sind immer mindestens drei.</p>` : ''}
+        <div class="row seg">${chips}</div>
+        <div class="row"><button type="button" id="prev">◀ Zurück</button><button type="button" id="next" class="primary">Weiter ▶</button><button type="button" id="play">${playing ? '⏸ Pause' : '▶▶ Abspielen'}</button></div>`;
+      panel.querySelector('#prev').addEventListener('click', () => { stop(); back(); });
+      panel.querySelector('#next').addEventListener('click', () => { stop(); advance(); });
+      panel.querySelector('#play').addEventListener('click', () => { if (playing) stop(); else start(); });
+      panel.querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', () => { stop(); idx = Number(b.dataset.step); note = ''; show(); }));
+    }
+
+    function advance() {
+      if (idx < plan().steps.length - 1) { idx += 1; show(); return; }
+      if (seg.phase === 'receive') {
+        seg = { rot: (seg.rot % 6) + 1, phase: 'serve' };
+        note = `Punkt gewonnen (Side-out): Das Team dreht im Uhrzeigersinn und schlägt jetzt in Rotation ${seg.rot} auf.`;
+      } else {
+        seg = { rot: seg.rot, phase: 'receive' };
+        note = 'Der Gegner gewinnt den Ballwechsel: Das Team nimmt in derselben Rotation an.';
+      }
+      idx = 0;
+      state = { ...state, rot: seg.rot, phase: seg.phase };
+      renderMenu();
+      show(1.8);
+    }
+    function back() {
+      if (idx > 0) { idx -= 1; note = ''; show(); }
+    }
+    function tick() {
+      if (!playing) return;
+      advance();
+      timer = setTimeout(tick, HOLD_MS);
+    }
+    function start() {
+      playing = true;
+      show();
+      timer = setTimeout(tick, HOLD_MS);
+    }
+    function stop() {
+      playing = false;
+      clearTimeout(timer);
+    }
+
+    handler = null;
+    show();
+  }
+
+  // ---------- Menü ----------
+  function renderMenu() {
+    const s = state;
+    const sys = SYSTEMS[s.system];
+    $('#modes').innerHTML = MODES.map((m) => `<button type="button" data-mode="${m.id}" class="${m.id === s.mode ? 'on' : ''}">${m.name}</button>`).join('');
+    const showRot = [1, 4, 5].includes(s.mode);
+    const showPhase = s.mode !== 3;
+    const showLevel = s.mode === 2 || s.mode === 3;
+    const dsIds = [...new Set(sys.base)].filter((id) => PLAYERS[id].pair !== 'middle');
+    $('#menu').innerHTML = `
+      <label>System <select data-key="system">${Object.values(SYSTEMS).map((x) => `<option value="${x.id}" ${x.id === s.system ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
+      ${showRot ? `<div class="seg" role="group" aria-label="Rotation">${[1, 2, 3, 4, 5, 6].map((r) => `<button type="button" data-rot="${r}" class="${r === s.rot ? 'on' : ''}">R${r}</button>`).join('')}</div>` : ''}
+      ${showPhase ? `<div class="seg" role="group" aria-label="Phase">${['serve', 'receive'].map((p) => `<button type="button" data-phase="${p}" class="${p === s.phase ? 'on' : ''}">${phaseName(p)}</button>`).join('')}</div>` : ''}
+      <label class="chk"><input type="checkbox" data-key="libero" ${s.libero ? 'checked' : ''}> Libero (für Mitte)</label>
+      <label>DS für <select data-key="ds"><option value="">keiner</option>${dsIds.map((id) => `<option value="${id}" ${id === s.ds ? 'selected' : ''}>${PLAYERS[id].name}</option>`).join('')}</select></label>
+      ${showLevel ? `<label>Stufe <select data-key="level">${['leicht', 'mittel', 'schwer'].map((l) => `<option ${l === s.level ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="chk"><input type="checkbox" data-key="timer" ${s.timer ? 'checked' : ''}> Zeitlimit 20 s</label>` : ''}`;
+  }
+
+  function renderScore() {
+    const st = VR.stats.load();
+    $('#score').textContent = `${st.points} Punkte · Streak ${st.streak} (Best ${st.best})`;
+  }
+
+  function startMode() {
+    cleanup();
+    cleanup = () => {};
+    handler = null;
+    court.setOverlay({});
+    const m = state.mode;
+    if (m === 1) modeFormation();
+    else if (m === 4) modeStack();
+    else if (m === 5) modeLearn();
+    else {
+      cleanup = VR.startQuiz(m === 2 ? 'legal' : 'rotation', {
+        state, court, panel, onScore: (sysId, rot, ok) => { VR.stats.record(sysId || state.system, rot, ok); renderScore(); },
+      });
+    }
+  }
+
+  function setState(patch) {
+    const prevSystem = state.system;
+    state = { ...state, ...patch };
+    if (state.system !== prevSystem && !SYSTEMS[state.system].base.includes(state.ds)) state = { ...state, ds: '' };
+    renderMenu();
+    startMode();
+  }
+
+  $('#modes').addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (b) setState({ mode: Number(b.dataset.mode) }); });
+  $('#menu').addEventListener('click', (e) => {
+    const r = e.target.closest('[data-rot]');
+    const p = e.target.closest('[data-phase]');
+    if (r) setState({ rot: Number(r.dataset.rot) });
+    if (p) setState({ phase: p.dataset.phase });
+  });
+  $('#menu').addEventListener('change', (e) => {
+    const key = e.target.dataset.key;
+    if (!key) return;
+    setState({ [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
+  });
+
+  function showStats() {
+    const st = VR.stats.load();
+    const rows = Object.values(SYSTEMS).map((sys) => `<tr><th>${sys.id}</th>${[1, 2, 3, 4, 5, 6].map((r) => {
+      const v = st.byRot[`${sys.id}:${r}`];
+      return `<td>${v ? `${Math.round((v.ok / v.total) * 100)}% <small>(${v.total})</small>` : '–'}</td>`;
+    }).join('')}</tr>`).join('');
+    const dlg = $('#statsDialog');
+    dlg.innerHTML = `<h2>Statistik</h2><p>${st.points} Punkte · Streak ${st.streak} · bester Streak ${st.best}</p>
+      <table><thead><tr><th></th>${[1, 2, 3, 4, 5, 6].map((r) => `<th>R${r}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>
+      <p><small>Trefferquote je System und Rotation (Anzahl Versuche in Klammern).</small></p>
+      <div class="row"><button type="button" id="resetStats">Zurücksetzen</button><button type="button" id="closeStats" class="primary">Schließen</button></div>`;
+    dlg.querySelector('#closeStats').addEventListener('click', () => dlg.close());
+    dlg.querySelector('#resetStats').addEventListener('click', () => { VR.stats.reset(); renderScore(); showStats(); });
+    if (!dlg.open) dlg.showModal();
+  }
+  $('#statsBtn').addEventListener('click', showStats);
+
+  renderMenu();
+  renderScore();
+  startMode();
+})();
