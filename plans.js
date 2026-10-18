@@ -78,7 +78,69 @@
     return { ready: byRole(ids, R.targetSpots(system, ids, 'receive')), defense: byRole(ids, R.targetSpots(system, ids, 'serve')) };
   }
 
-  const api = { planFor, idealFor, stepTokens, posesFor, spotsByRole };
+  // Was ein einzelner Spieler in jedem Schritt tut: { title, verb, text } je Schritt.
+  function playerActions(system, rot, phase, role) {
+    const ids = R.lineupFor(system, rot);
+    const slot = ids.indexOf(role) + 1;
+    const front = R.isFront(slot);
+    const setter = R.isSetting(system, role, slot);
+    const pair = PLAYERS_PAIR(role);
+    const server = phase === 'serve' && slot === 1;
+    const attackText = pair === 'middle'
+      ? 'Schneller Angriff in der Mitte: Anlauf so timen, dass du kurz vor dem Zuspiel abspringst.'
+      : pair === 'setter'
+        ? 'Angriff über rechts außen: Anlauf nehmen, Ball verlangen.'
+        : 'Außenangriff über links: Anlauf nehmen, Ball verlangen, hoch und scharf spielen.';
+    const blockText = pair === 'middle'
+      ? 'Mittelblock: Block lesen und mit der Außenspielerin oder dem Außenspieler zum Doppelblock schließen.'
+      : 'Block am Netz stellen. Außen blockt in der Regel mit der Mitte zusammen.';
+    const table = {
+      'Stack vor dem Aufschlag': server
+        ? ['Aufschlagen', 'Hinter der Endlinie stehen. Nach dem Ballkontakt sofort ins Feld laufen.']
+        : front ? ['Block vorbereiten', 'Stack halten und die vordere Mitte im Blick behalten. Nach dem Aufschlag zum Block bereit sein.']
+          : ['Abwehr vorbereiten', 'Stack halten. Nach dem Aufschlag auf die Abwehrposition wechseln.'],
+      'Übergang zur Abwehr': server
+        ? ['Ins Feld laufen', 'Nach dem Aufschlag sofort auf die eigene Abwehrposition laufen.']
+        : ['Auf Abwehr wechseln', 'Nach dem Aufschlagkontakt auf die Abwehrposition wechseln. Vorderreihe zum Block, Hinterreihe tief.'],
+      Stack: setter
+        ? ['Zuspiel vorbereiten', 'Nah am Zuspielpunkt starten. Nicht annehmen, den Weg zum Netz freihalten.']
+        : null,
+      'Übergang zum Angriff': setter
+        ? ['Zum Zuspielpunkt', 'Sobald der Ball aufgeschlagen ist, sofort zum Zuspielpunkt am Netz laufen.']
+        : null,
+      Angriffsbereit: setter
+        ? ['Zuspielen', 'Zum Ball laufen und die Angreifer sauber anspielen.']
+        : front ? ['Angriffsbereit', attackText]
+          : ['Absicherung', 'Tief und verteilt bleiben, falls der Angriff geblockt wird.'],
+      Absicherung: front
+        ? [setter ? 'Absichern' : 'Angreifen oder absichern', 'Je nach Angriffsseite greifst du an oder sicherst kurz ab. Wer keinen Weg hat, bleibt bereit.']
+        : ['Angreifer absichern', 'Näher zum Angreifer rücken, tief bleiben und den geblockten Ball annehmen.'],
+      'Wechsel in die Abwehr': front
+        ? ['Zum Block', 'Sobald der Ball über dem Netz ist: zurück ans Netz und die Blockposition einnehmen.']
+        : ['Abwehr einnehmen', 'Sobald der Ball über dem Netz ist: auf die eigene Abwehrposition wechseln, tief und bereit.'],
+      'Grundposition Abwehr': front
+        ? ['Blocken', blockText]
+        : ['Abwehr', 'Tief stehen, Hände vorn, Ball lesen. Den Block und die Angreifer im Blick behalten.'],
+    };
+    return planFor(system, rot, phase).steps.map((step) => {
+      const passer = step.passers.includes(role);
+      let hit = table[step.title];
+      if (step.title === 'Stack' && !hit) {
+        hit = passer ? ['Annahme bereit', 'Du nimmst an. Tief und breit stehen, den Aufschlag lesen, Plattform vorbereiten.']
+          : ['Kurze Bälle decken', 'Du nimmst nicht an. Decke kurze Aufschläge und löse dich nach dem Aufschlag zum Angriff.'];
+      }
+      if (step.title === 'Übergang zum Angriff' && !hit) {
+        hit = passer ? ['Erst annehmen', 'Spiel den Ball genau zum Zuspieler. Erst danach auf die Angriffsposition gehen.']
+          : front ? ['Zum Angriff lösen', 'Löse dich zur Angriffsposition. Achte auf kurze Aufschläge.']
+            : ['Bereit zur Absicherung', 'Folge dem Spiel und sei bereit, den Angreifer abzusichern.'];
+      }
+      const [verb, text] = hit || ['Position halten', step.caption];
+      return { title: step.title, verb, text };
+    });
+  }
+  const PLAYERS_PAIR = (role) => (globalThis.VR ? globalThis.VR.PLAYERS : require('./data.js').PLAYERS)[role].pair;
+
+  const api = { planFor, idealFor, stepTokens, posesFor, spotsByRole, playerActions };
   if (node) module.exports = api;
   else globalThis.VR = Object.assign(globalThis.VR || {}, api);
 })();

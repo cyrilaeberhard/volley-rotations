@@ -52,3 +52,18 @@ Object.values(D.SYSTEMS).forEach((sys) => {
   }
 });
 console.log('plans.test.js: alle Checks ok');
+
+// Spieler-Fokus: jede Rolle hat in jedem Schritt ein Verb und einen Text.
+Object.values(D.SYSTEMS).forEach((system) => {
+  for (let rot = 1; rot <= 6; rot += 1) {
+    ['serve', 'receive'].forEach((phase) => {
+      const steps = P.planFor(system, rot, phase).steps;
+      R.lineupFor(system, rot).forEach((role) => {
+        const acts = P.playerActions(system, rot, phase, role);
+        assert.equal(acts.length, steps.length);
+        acts.forEach((a) => assert.ok(a.verb && a.text, `${system.id} ${rot} ${phase} ${role} ${a.title}`));
+      });
+    });
+  }
+});
+console.log('Spieler-Fokus ok');

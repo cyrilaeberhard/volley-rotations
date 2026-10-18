@@ -16,7 +16,7 @@
   };
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-  function createCourt(svg, onMove) {
+  function createCourt(svg, onMove, onTap) {
     svg.innerHTML = '';
     svg.setAttribute('viewBox', '-1 -2.4 11 14.8');
     node('rect', { x: 0, y: -2, width: 9, height: 2, class: 'opp' }, svg);
@@ -28,8 +28,6 @@
     node('line', { x1: 0, y1: 9, x2: 9, y2: 9, class: 'line' }, svg);
     node('line', { x1: 0, y1: 0, x2: 0, y2: 9, class: 'line' }, svg);
     node('line', { x1: 9, y1: 0, x2: 9, y2: 9, class: 'line' }, svg);
-    label(svg, 9.1, 0.1, 'Netz', 'edge-label');
-    label(svg, 9.1, 3.1, '3 m', 'edge-label');
     label(svg, 4.5, 11.6, 'Aufschlagzone', 'zone-label');
     const cells = { 4: [1.5, 1.5], 3: [4.5, 1.5], 2: [7.5, 1.5], 5: [1.5, 6], 6: [4.5, 6], 1: [7.5, 6] };
     Object.entries(cells).forEach(([slot, [x, y]]) => label(svg, x, y + 0.5, slot, 'cell-number'));
@@ -40,7 +38,37 @@
     const ballLayer = node('g', { class: 'ball-layer', display: 'none' }, svg);
     const shadow = node('ellipse', { rx: 0.3, ry: 0.15, class: 'ball-shadow' }, ballLayer);
     const ball = node('circle', { r: 0.3, class: 'ball' }, ballLayer);
+    const bubble = node('g', { class: 'bubble', display: 'none' }, svg);
+    const bubbleBg = node('rect', { rx: 0.25, height: 0.9, class: 'bubble-bg' }, bubble);
+    const bubbleText = label(bubble, 0, 0, '', 'bubble-text');
+    let bubbleTimer = 0;
     let drag = null;
+    let focusKey = null;
+
+    function applyFocus() {
+      tokens.forEach((g, key) => {
+        g.classList.toggle('focus', focusKey !== null && String(key) === String(focusKey));
+        g.classList.toggle('dim', focusKey !== null && String(key) !== String(focusKey));
+      });
+    }
+    const setFocus = (key) => { focusKey = key; applyFocus(); };
+
+    function showBubble(g) {
+      const m = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(g.style.transform);
+      if (!m) return;
+      const text = g.querySelector('title').textContent;
+      const w = text.length * 0.24 + 0.6;
+      const x = clamp(Number(m[1]), w / 2 - 0.8, 9.8 - w / 2);
+      bubble.setAttribute('transform', `translate(${x} ${Number(m[2]) - 1.2})`);
+      bubbleText.setAttribute('y', 0.3);
+      bubbleText.textContent = text;
+      bubbleBg.setAttribute('x', -w / 2);
+      bubbleBg.setAttribute('y', -0.45);
+      bubbleBg.setAttribute('width', w);
+      bubble.setAttribute('display', '');
+      clearTimeout(bubbleTimer);
+      bubbleTimer = setTimeout(() => bubble.setAttribute('display', 'none'), 2200);
+    }
 
     function place(g, x, y) {
       g.style.transform = `translate(${x}px, ${y}px)`;
@@ -66,6 +94,7 @@
         const g = ensureToken(t.key ?? t.slot);
         g.setAttribute('class', ['token', t.kind || 'normal', t.status || '', t.movable ? 'movable' : '', t.passer ? 'passer' : ''].join(' ').trim());
         g.dataset.slot = t.slot;
+        g.dataset.key = t.key ?? t.slot;
         g.style.transitionDuration = `${t.duration ?? 0.35}s`;
         g.style.transitionDelay = `${t.delay ?? 0}s`;
         g.querySelector('[data-role="name"]').textContent = t.text;
@@ -74,6 +103,7 @@
         title.textContent = `${t.name || t.text} (Position ${t.slot})`;
         place(g, t.x, t.y);
       });
+      applyFocus();
     }
 
     // Ball: x/y am Boden, z = Höhe in Metern (wird nach oben versetzt gezeichnet). null versteckt ihn.
@@ -91,7 +121,7 @@
       overlay.innerHTML = '';
       lines.forEach((l) => node('line', { x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2, class: `link ${l.cls || ''}` }, overlay));
       ghosts.forEach((g) => {
-        node('circle', { cx: g.x, cy: g.y, r: 0.62, class: 'ghost' }, overlay);
+        node('circle', { cx: g.x, cy: g.y, r: g.r || 0.62, class: `ghost ${g.cls || ''}` }, overlay);
         label(overlay, g.x, g.y + 0.22, g.text || '', 'ghost-text');
       });
     }
@@ -106,7 +136,10 @@
 
     svg.addEventListener('pointerdown', (e) => {
       const g = e.target.closest('.token');
-      if (!g || !g.classList.contains('movable')) return;
+      if (!g) { bubble.setAttribute('display', 'none'); return; }
+      showBubble(g);
+      if (onTap) onTap(g.dataset.key, g);
+      if (!g.classList.contains('movable')) return;
       drag = { slot: Number(g.dataset.slot), g, id: e.pointerId };
       svg.setPointerCapture(e.pointerId);
       g.classList.add('dragging');
@@ -116,6 +149,7 @@
       if (!drag || e.pointerId !== drag.id) return;
       const p = toSvg(e);
       place(drag.g, p.x, p.y);
+      bubble.setAttribute('display', 'none');
       onMove(drag.slot, p, false);
     });
     const end = (e) => {
@@ -129,7 +163,7 @@
     svg.addEventListener('pointerup', end);
     svg.addEventListener('pointercancel', end);
 
-    return { setTokens, setOverlay, setBall };
+    return { setTokens, setOverlay, setBall, setFocus };
   }
 
   globalThis.VR = Object.assign(globalThis.VR || {}, { createCourt });

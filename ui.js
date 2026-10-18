@@ -5,23 +5,22 @@
   const $ = (sel) => document.querySelector(sel);
 
   const MODES = [
-    { id: 1, name: 'Formation legen' },
-    { id: 2, name: 'Legal oder Fehler' },
-    { id: 3, name: 'Rotationsquiz' },
-    { id: 4, name: 'Stack & Switch' },
-    { id: 5, name: 'Lernmodus' },
-    { id: 6, name: 'Simulation' },
+    { id: 5, name: 'Lernfilm', hint: 'Zuschauen, wie sich das Team stellt und wechselt.' },
+    { id: 6, name: 'Simulation', hint: 'Ein Ballwechsel live.' },
+    { id: 1, name: 'Formation', hint: 'Spieler selbst ziehen.' },
+    { id: 4, name: 'Stack & Switch', hint: 'Stack stellen, dann wechseln.' },
+    { id: 2, name: 'Legal?', hint: 'Aufstellung beurteilen.' },
+    { id: 3, name: 'Quiz', hint: 'Fragen zu Rotation und Regeln.' },
   ];
   const phaseName = (p) => (p === 'serve' ? 'Aufschlag' : 'Annahme');
 
   let state = { mode: 1, system: '5-1', rot: 1, phase: 'receive', libero: true, ds: '', level: 'leicht', timer: false };
   let cleanup = () => {};
   let handler = null;
-  const court = VR.createCourt($('#court'), (slot, p, final) => { if (handler) handler(slot, p, final); });
+  let tapHandler = null;
+  const court = VR.createCourt($('#court'), (slot, p, final) => { if (handler) handler(slot, p, final); }, (key) => { if (tapHandler) tapHandler(key); });
   const panel = $('#panel');
 
-  const lineText = (ids, opts, phase) => R.SLOTS
-    .map((slot) => `Pos. ${slot}: ${R.displayLabel(ids[slot - 1], slot, phase, opts).text}`).join(' · ');
   const startPositions = (phase) => ({
     ...Object.fromEntries(R.SLOTS.map((slot) => [slot, { ...HOME_CELLS[slot] }])),
     ...(phase === 'serve' ? { 1: { ...SERVE_SPOT } } : {}),
@@ -46,12 +45,11 @@
       court.setOverlay({ lines });
     };
     const message = (html) => { panel.querySelector('.feedback').innerHTML = html; };
-    const ids = R.lineupFor(sys, state.rot);
 
     panel.innerHTML = `<h2>Formation legen</h2>
-      <p>${sys.name}, Rotation ${state.rot}, ${phaseName(state.phase)}.<br>${lineText(ids, options(), state.phase)}</p>
-      <p>Zieh alle sechs Spieler so, dass die Aufstellung legal ist. Die Zahl am Spieler ist seine Position in der Rotation.
-      ${serving ? 'Der Aufschläger (Pos. 1) darf hinter die Endlinie in die Aufschlagzone gehen. Dann gilt für ihn keine Überlappungsregel.' : ''}</p>
+      <p>${sys.name} · Rotation ${state.rot} · ${phaseName(state.phase)}</p>
+      <p>Zieh alle sechs Spieler auf legale Plätze.</p>
+      <details><summary>Hinweise</summary><p>Die Zahl am Spieler ist seine Position in der Rotation. Tipp: Spieler antippen zeigt den Namen.${serving ? ' Der Aufschläger darf in die Aufschlagzone, für ihn gilt keine Überlappungsregel.' : ''}</p></details>
       <div class="row"><button type="button" id="check" class="primary">Prüfen</button><button type="button" id="reset">Zurücksetzen</button></div>
       <div class="feedback"></div>`;
 
@@ -102,12 +100,12 @@
         ? `Aufschlag: Stack um die vordere Mitte (${anchorLabel}), sie soll zum Block bereit bleiben. Der Aufschläger steht hinter der Endlinie.`
         : `Annahme: Stack um ${anchorLabel}. ${ideal.anchor === R.SLOTS.find((s) => R.isSetting(sys, ids[s - 1], s)) ? 'Der Zuspieler soll nah an seinem Zuspielpunkt starten.' : 'Der Zuspieler steht auf 4 oder 5, darum hat die vordere Außenangreiferin Vorrang und bleibt nah an Links-vorne.'}`;
       panel.innerHTML = step === 'stack'
-        ? `<h2>Schritt 1: Stack stellen</h2><p>${sys.name}, Rotation ${state.rot}, ${phaseName(state.phase)}.<br>${lineText(ids, options(), state.phase)}</p>
-           <p>${hint}</p><p>Legal und innerhalb 1,5 m vom Ideal: grün. Legal, aber weiter weg: gelb.</p>
+        ? `<h2>Schritt 1: Stack stellen</h2><p>${sys.name} · Rotation ${state.rot} · ${phaseName(state.phase)}</p>
+           <p>Stell den Stack: legal und nah am Ideal wird grün.</p><details><summary>Hinweise</summary><p>${hint}</p><p>Legal, aber weiter weg: gelb.</p></details>
            <div class="row"><button type="button" id="check" class="primary">Stack prüfen</button><button type="button" id="show">Ideal zeigen</button><button type="button" id="reset">Zurücksetzen</button></div>
            <div class="feedback"></div>`
         : `<h2>Schritt 2: Wechsel (${switchTarget})</h2>
-           <p>Der Aufschläger hat den Ball berührt. Zieh jeden Spieler auf seine ${switchTarget}-Position. Bleib in deiner Reihe (vorn oder hinten).</p>
+           <p>Zieh jeden Spieler auf seine ${switchTarget}-Position, in der eigenen Reihe.</p>
            <div class="row"><button type="button" id="check" class="primary">Wechsel prüfen</button><button type="button" id="show">Lösung zeigen</button><button type="button" id="back">Zurück zum Stack</button></div>
            <div class="feedback"></div>`;
       bind();
@@ -172,28 +170,54 @@
     let note = '';
     let playing = false;
     let timer = null;
-    cleanup = () => { playing = false; clearTimeout(timer); };
+    let focus = null;
+    cleanup = () => { playing = false; clearTimeout(timer); court.setFocus(null); };
 
     const plan = () => VR.planFor(sys, seg.rot, seg.phase);
+
+    // Laufweg der fokussierten Person: Punkte je Schritt, verbunden, nummeriert.
+    function trail(p) {
+      const pts = p.steps.map((st) => st.pos[focus]);
+      const lines = pts.slice(1).map((q, i) => ({ x1: pts[i].x, y1: pts[i].y, x2: q.x, y2: q.y, cls: 'trail' }));
+      const ghosts = pts.map((q, i) => ({ x: q.x, y: q.y, text: String(i + 1), r: 0.42, cls: i === idx ? 'now' : 'step' }));
+      return { lines, ghosts };
+    }
+
+    function focusPanel(p, ids) {
+      const slot = ids.indexOf(focus) + 1;
+      const label = R.displayLabel(focus, slot, seg.phase, options());
+      const acts = VR.playerActions(sys, seg.rot, seg.phase, focus);
+      const now = acts[idx];
+      return `<div class="focus-head"><span class="chip">${label.text}</span><div><strong>${label.name}</strong><div class="meta">Position ${slot} · ${PLAYERS[focus].name}</div></div>
+          <button type="button" id="unfocus" class="ghost-btn" title="Fokus aufheben">✕</button></div>
+        <div class="verb">${now.verb}</div><p>${now.text}</p>
+        <ol class="timeline">${acts.map((a, i) => `<li><button type="button" data-step="${i}" class="${i === idx ? 'on' : ''}"><b>${i + 1}</b><span>${a.verb}</span></button></li>`).join('')}</ol>`;
+    }
 
     function show(duration = 1.0) {
       const p = plan();
       const step = p.steps[idx];
-      court.setTokens(VR.stepTokens(sys, seg.rot, seg.phase, step, options(), duration));
-      court.setOverlay({});
       const ids = R.lineupFor(sys, seg.rot);
+      court.setTokens(VR.stepTokens(sys, seg.rot, seg.phase, step, options(), duration));
+      court.setFocus(focus);
+      court.setOverlay(focus ? trail(p) : {});
       const chips = p.steps.map((s, i) => `<button type="button" data-step="${i}" class="${i === idx ? 'on' : ''}">${i + 1}</button>`).join('');
-      panel.innerHTML = `<h2>${step.title}</h2>
-        <p class="meta">${sys.name} · Rotation ${seg.rot} · ${phaseName(seg.phase)} · ${p.source === 'PDF' ? 'nach Plan-PDF' : 'berechnet'}<br>${lineText(ids, options(), seg.phase)}</p>
-        ${note && idx === 0 ? `<p class="note">${note}</p>` : ''}
-        <p>${step.caption}</p>
-        ${step.passers.length ? `<p class="meta">Gelb umrandet: nehmen an (${step.passers.map((r) => PLAYERS[r].label).join(', ')}). Es sind immer mindestens drei.</p>` : ''}
-        <div class="row seg">${chips}</div>
-        <div class="row"><button type="button" id="prev">◀ Zurück</button><button type="button" id="next" class="primary">Weiter ▶</button><button type="button" id="play">${playing ? '⏸ Pause' : '▶▶ Abspielen'}</button></div>`;
+      const body = focus
+        ? focusPanel(p, ids)
+        : `<h2>${step.title}</h2>
+          ${note && idx === 0 ? `<p class="note">${note}</p>` : ''}
+          <p>${step.caption}</p>
+          ${step.passers.length ? `<p class="meta">Gelb umrandet: nehmen an (${step.passers.map((r) => PLAYERS[r].label).join(', ')}).</p>` : ''}
+          <div class="row seg">${chips}</div>
+          <p class="hint">Tippe auf einen Spieler, um nur seinen Weg und seine Aufgaben zu sehen.</p>`;
+      panel.innerHTML = `<p class="meta">${sys.name} · Rotation ${seg.rot} · ${phaseName(seg.phase)}${focus ? ` · ${step.title}` : ''}</p>${body}
+        <div class="row"><button type="button" id="prev">◀</button><button type="button" id="next" class="primary">Weiter ▶</button><button type="button" id="play">${playing ? '⏸ Pause' : '▶ Abspielen'}</button></div>`;
       panel.querySelector('#prev').addEventListener('click', () => { stop(); back(); });
       panel.querySelector('#next').addEventListener('click', () => { stop(); advance(); });
       panel.querySelector('#play').addEventListener('click', () => { if (playing) stop(); else start(); });
       panel.querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', () => { stop(); idx = Number(b.dataset.step); note = ''; show(); }));
+      const un = panel.querySelector('#unfocus');
+      if (un) un.addEventListener('click', () => { focus = null; show(); });
     }
 
     function advance() {
@@ -229,6 +253,7 @@
     }
 
     handler = null;
+    tapHandler = (key) => { focus = focus === key ? null : key; show(); };
     show();
   }
 
@@ -278,8 +303,10 @@
       last = ts;
       raf = requestAnimationFrame(loop);
     };
-    cleanup = () => cancelAnimationFrame(raf);
+    cleanup = () => { cancelAnimationFrame(raf); court.setFocus(null); };
     handler = null;
+    let simFocus = null;
+    tapHandler = (key) => { simFocus = simFocus === key ? null : key; court.setFocus(simFocus); };
     sim.start();
     raf = requestAnimationFrame(loop);
   }
@@ -288,19 +315,21 @@
   function renderMenu() {
     const s = state;
     const sys = SYSTEMS[s.system];
-    $('#modes').innerHTML = MODES.map((m) => `<button type="button" data-mode="${m.id}" class="${m.id === s.mode ? 'on' : ''}">${m.name}</button>`).join('');
+    $('#modes').innerHTML = MODES.map((m) => `<button type="button" data-mode="${m.id}" title="${m.hint}" class="${m.id === s.mode ? 'on' : ''}">${m.name}</button>`).join('');
     const showRot = [1, 4, 5, 6].includes(s.mode);
     const showPhase = s.mode !== 3;
     const showLevel = s.mode === 2 || s.mode === 3;
     const dsIds = [...new Set(sys.base)].filter((id) => PLAYERS[id].pair !== 'middle');
     $('#menu').innerHTML = `
-      <label>System <select data-key="system">${Object.values(SYSTEMS).map((x) => `<option value="${x.id}" ${x.id === s.system ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
       ${showRot ? `<div class="seg" role="group" aria-label="Rotation">${[1, 2, 3, 4, 5, 6].map((r) => `<button type="button" data-rot="${r}" class="${r === s.rot ? 'on' : ''}">R${r}</button>`).join('')}</div>` : ''}
       ${showPhase ? `<div class="seg" role="group" aria-label="Phase">${['serve', 'receive'].map((p) => `<button type="button" data-phase="${p}" class="${p === s.phase ? 'on' : ''}">${phaseName(p)}</button>`).join('')}</div>` : ''}
-      <label class="chk"><input type="checkbox" data-key="libero" ${s.libero ? 'checked' : ''}> Libero (für Mitte)</label>
-      <label>DS für <select data-key="ds"><option value="">keiner</option>${dsIds.map((id) => `<option value="${id}" ${id === s.ds ? 'selected' : ''}>${PLAYERS[id].name}</option>`).join('')}</select></label>
-      ${showLevel ? `<label>Stufe <select data-key="level">${['leicht', 'mittel', 'schwer'].map((l) => `<option ${l === s.level ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-        <label class="chk"><input type="checkbox" data-key="timer" ${s.timer ? 'checked' : ''}> Zeitlimit 20 s</label>` : ''}`;
+      <details class="settings"><summary>⚙ ${s.system}</summary><div class="pop">
+        <label>System <select data-key="system">${Object.values(SYSTEMS).map((x) => `<option value="${x.id}" ${x.id === s.system ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
+        <label class="chk"><input type="checkbox" data-key="libero" ${s.libero ? 'checked' : ''}> Libero für die Mitte</label>
+        <label>DS für <select data-key="ds"><option value="">keiner</option>${dsIds.map((id) => `<option value="${id}" ${id === s.ds ? 'selected' : ''}>${PLAYERS[id].name}</option>`).join('')}</select></label>
+        ${showLevel ? `<label>Stufe <select data-key="level">${['leicht', 'mittel', 'schwer'].map((l) => `<option ${l === s.level ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="chk"><input type="checkbox" data-key="timer" ${s.timer ? 'checked' : ''}> Zeitlimit 20 s</label>` : ''}
+      </div></details>`;
   }
 
   function renderScore() {
@@ -312,6 +341,8 @@
     cleanup();
     cleanup = () => {};
     handler = null;
+    tapHandler = null;
+    court.setFocus(null);
     court.setOverlay({});
     const m = state.mode;
     if (m === 1) modeFormation();
@@ -362,6 +393,16 @@
     if (!dlg.open) dlg.showModal();
   }
   $('#statsBtn').addEventListener('click', showStats);
+
+  const root = document.documentElement;
+  const themeBtn = $('#themeBtn');
+  const paintTheme = () => { themeBtn.textContent = root.dataset.theme === 'dark' ? '☀ Hell' : '☾ Dunkel'; };
+  themeBtn.addEventListener('click', () => {
+    root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('vr-theme', root.dataset.theme);
+    paintTheme();
+  });
+  paintTheme();
 
   renderMenu();
   renderScore();
