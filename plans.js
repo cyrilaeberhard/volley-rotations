@@ -37,9 +37,47 @@
     ] };
   }
 
-  function planFor(system, rot, phase) {
+  // ---------- Absicherung (Soutien) ----------
+  // Das PDF liefert hier nur die Grundstellung. Die Wege je Angriffsseite werden berechnet:
+  // Der Angreifer springt am Netz, alle anderen (außer dem Zuspieler) bilden einen Halbkreis dahinter.
+  const COVER_SIDES = { links: 'links', mitte: 'der Mitte', rechts: 'rechts' };
+  const ARC = { cy: 0.9, rx: 2.6, ry: 3.4, angles: [160, 115, 65, 20] };
+  const clampX = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+  function coverPlan(system, rot, ready, side) {
+    const ids = R.lineupFor(system, rot);
+    const slotOf = (id) => ids.indexOf(id) + 1;
+    const setter = ids.find((id) => R.isSetting(system, id, slotOf(id)));
+    const hitters = ids.filter((id) => id !== setter && R.isFront(slotOf(id))).sort((a, b) => ready[a].x - ready[b].x);
+    const middle = hitters.find((id) => PLAYERS_PAIR(id) === 'middle')
+      || [...hitters].sort((a, b) => Math.abs(ready[a].x - 4.5) - Math.abs(ready[b].x - 4.5))[0];
+    const hitter = { links: hitters[0], mitte: middle, rechts: hitters[hitters.length - 1] }[side];
+    const ax = clampX(ready[hitter].x, 1.2, 7.8);
+    const cx = clampX(ax, 3, 6);
+    const spots = ARC.angles.map((deg) => ({
+      x: cx + ARC.rx * Math.cos((deg * Math.PI) / 180), y: ARC.cy + ARC.ry * Math.sin((deg * Math.PI) / 180),
+    }));
+    const others = ids.filter((id) => id !== hitter && id !== setter).sort((a, b) => ready[a].x - ready[b].x);
+    const pos = { ...ready, [hitter]: { x: ax, y: 1.0 } };
+    others.forEach((id, i) => { pos[id] = spots[i]; });
+    const arc = [];
+    for (let deg = 0; deg < 180; deg += 15) {
+      const a = (d) => ({ x: cx + ARC.rx * Math.cos((d * Math.PI) / 180), y: ARC.cy + ARC.ry * Math.sin((d * Math.PI) / 180) });
+      const [p, q] = [a(deg), a(deg + 15)];
+      arc.push({ x1: p.x, y1: p.y, x2: q.x, y2: q.y, cls: 'move' });
+    }
+    const name = PLAYERS_NAME(hitter);
+    const caption = `Absicherung bei Angriff über ${COVER_SIDES[side]}: ${name} greift an. Alle anderen außer dem Zuspieler bilden einen Halbkreis etwa 2 bis 4 m hinter dem Angreifer, damit sie einen geblockten Ball erreichen. Der Zuspieler bleibt am Netz.`;
+    return { pos, caption, cover: { hitter, side, arc } };
+  }
+
+  function planFor(system, rot, phase, side = 'links') {
     const pdf = system.id === '5-1' ? PDF_PLANS[`${rot}-${phase}`] : null;
-    return pdf ? { source: 'PDF', steps: pdf.steps } : computedPlan(system, rot, phase);
+    if (!pdf) return computedPlan(system, rot, phase);
+    const steps = pdf.steps.map((st) => (phase === 'receive' && st.title === 'Absicherung'
+      ? { ...st, ...coverPlan(system, rot, pdf.steps[2].pos, side) }
+      : st));
+    return { source: 'PDF', steps };
   }
 
   // Ideal-Stack und Wechsel-Ziele für Modus 4: 5-1 nach PDF, sonst berechnet.
@@ -138,9 +176,10 @@
       return { title: step.title, verb, text };
     });
   }
+  const PLAYERS_NAME = (role) => (globalThis.VR ? globalThis.VR.PLAYERS : require('./data.js').PLAYERS)[role].name;
   const PLAYERS_PAIR = (role) => (globalThis.VR ? globalThis.VR.PLAYERS : require('./data.js').PLAYERS)[role].pair;
 
-  const api = { planFor, idealFor, stepTokens, posesFor, spotsByRole, playerActions };
+  const api = { COVER_SIDES, planFor, idealFor, stepTokens, posesFor, spotsByRole, playerActions };
   if (node) module.exports = api;
   else globalThis.VR = Object.assign(globalThis.VR || {}, api);
 })();

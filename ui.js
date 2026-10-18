@@ -171,9 +171,10 @@
     let playing = false;
     let timer = null;
     let focus = null;
+    let coverSide = 'links'; // Angriffsseite für den Schritt Absicherung
     cleanup = () => { playing = false; clearTimeout(timer); court.setFocus(null); };
 
-    const plan = () => VR.planFor(sys, seg.rot, seg.phase);
+    const plan = () => VR.planFor(sys, seg.rot, seg.phase, coverSide);
 
     // Laufweg der fokussierten Person: Punkte je Schritt, verbunden, nummeriert.
     function trail(p) {
@@ -200,7 +201,8 @@
       const ids = R.lineupFor(sys, seg.rot);
       court.setTokens(VR.stepTokens(sys, seg.rot, seg.phase, step, options(), duration));
       court.setFocus(focus);
-      court.setOverlay(focus ? trail(p) : {});
+      const arc = step.cover ? step.cover.arc : [];
+      court.setOverlay(focus ? { ...trail(p), lines: [...trail(p).lines, ...arc] } : { lines: arc });
       const chips = p.steps.map((s, i) => `<button type="button" data-step="${i}" class="${i === idx ? 'on' : ''}">${i + 1}</button>`).join('');
       const body = focus
         ? focusPanel(p, ids)
@@ -208,6 +210,7 @@
           ${note && idx === 0 ? `<p class="note">${note}</p>` : ''}
           <p>${step.caption}</p>
           ${step.passers.length ? `<p class="meta">Gelb umrandet: nehmen an (${step.passers.map((r) => PLAYERS[r].label).join(', ')}).</p>` : ''}
+          ${step.cover ? `<div class="row seg" aria-label="Angriffsseite">${Object.keys(VR.COVER_SIDES).map((k) => `<button type="button" data-side="${k}" class="${k === coverSide ? 'on' : ''}">Angriff ${k}</button>`).join('')}</div>` : ''}
           <div class="row seg">${chips}</div>
           <p class="hint">Tippe auf einen Spieler, um nur seinen Weg und seine Aufgaben zu sehen.</p>`;
       panel.innerHTML = `<p class="meta">${sys.name} · Rotation ${seg.rot} · ${phaseName(seg.phase)}${focus ? ` · ${step.title}` : ''}</p>${body}
@@ -216,6 +219,7 @@
       panel.querySelector('#next').addEventListener('click', () => { stop(); advance(); });
       panel.querySelector('#play').addEventListener('click', () => { if (playing) stop(); else start(); });
       panel.querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', () => { stop(); idx = Number(b.dataset.step); note = ''; show(); }));
+      panel.querySelectorAll('[data-side]').forEach((b) => b.addEventListener('click', () => { stop(); coverSide = b.dataset.side; show(); }));
       const un = panel.querySelector('#unfocus');
       if (un) un.addEventListener('click', () => { focus = null; show(); });
     }
@@ -344,6 +348,7 @@
     tapHandler = null;
     court.setFocus(null);
     court.setOverlay({});
+    court.setBall(null);
     const m = state.mode;
     if (m === 1) modeFormation();
     else if (m === 4) modeStack();

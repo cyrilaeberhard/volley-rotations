@@ -67,3 +67,26 @@ Object.values(D.SYSTEMS).forEach((system) => {
   }
 });
 console.log('Spieler-Fokus ok');
+
+// Absicherung: je Angriffsseite ein Halbkreis hinter einem Vorderreihen-Angreifer, Zuspieler am Netz.
+for (let rot = 1; rot <= 6; rot += 1) {
+  Object.keys(P.COVER_SIDES).forEach((side) => {
+    const ids = R.lineupFor(sys51, rot);
+    const step = P.planFor(sys51, rot, 'receive', side).steps.find((s) => s.title === 'Absicherung');
+    const { hitter } = step.cover;
+    const label = `R${rot} ${side}`;
+    const slot = ids.indexOf(hitter) + 1;
+    assert.ok(R.isFront(slot) && !R.isSetting(sys51, hitter, slot), `${label}: Angreifer muss vorn spielen und darf nicht zuspielen`);
+    assert.equal(Object.keys(step.pos).length, 6);
+    ids.forEach((id) => {
+      assert.ok(step.pos[id].x >= 0 && step.pos[id].x <= 9 && step.pos[id].y >= 0 && step.pos[id].y <= 9, `${label}: ${id} im Feld`);
+      ids.filter((o) => o > id).forEach((o) => assert.ok(R.dist(step.pos[id], step.pos[o]) > 0.9, `${label}: ${id}/${o} zu nah`));
+    });
+    const others = ids.filter((id) => id !== hitter && !R.isSetting(sys51, id, ids.indexOf(id) + 1));
+    others.forEach((id) => assert.ok(step.pos[id].y > 1.2, `${label}: ${id} steht hinter dem Angreifer`));
+    assert.ok(step.cover.arc.length >= 10);
+  });
+}
+// Die drei Seiten ergeben drei verschiedene Angreifer, wenn drei Vorderreihen-Angreifer vorhanden sind (Rot. 1: D, M2, A1).
+assert.equal(new Set(Object.keys(P.COVER_SIDES).map((side) => P.planFor(sys51, 1, 'receive', side).steps[3].cover.hitter)).size, 3);
+console.log('Absicherung ok');
