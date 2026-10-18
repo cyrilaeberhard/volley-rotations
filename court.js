@@ -143,6 +143,7 @@
       drag = { slot: Number(g.dataset.slot), g, id: e.pointerId };
       svg.setPointerCapture(e.pointerId);
       g.classList.add('dragging');
+      g.style.transition = 'none';
       e.preventDefault();
     });
     svg.addEventListener('pointermove', (e) => {
@@ -158,6 +159,7 @@
       const { slot, g } = drag;
       drag = null;
       g.classList.remove('dragging');
+      g.style.transition = '';
       onMove(slot, p, true);
     };
     svg.addEventListener('pointerup', end);
