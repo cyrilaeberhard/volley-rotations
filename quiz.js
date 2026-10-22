@@ -1,146 +1,135 @@
-// Quiz-Modi: "Legal oder Fehlstellung" (Modus 2) und Rotationsquiz (Modus 3).
+// Quiz-Modi: "Legal oder Fehlstellung" (Modus 4) und Playbook-Quiz (Modus 5).
 (function () {
-  const { SYSTEMS, PLAYERS, HOME_CELLS, STATEMENTS } = VR;
+  const { PLAYERS } = VR;
   const R = VR;
   const ROUND = 10;
   const SECONDS = 20;
 
   const pick = (rng, arr) => arr[Math.floor(rng() * arr.length)];
   const shuffle = (rng, arr) => arr.map((v) => [rng(), v]).sort((a, b) => a[0] - b[0]).map((p) => p[1]);
-  const phaseName = (p) => (p === 'serve' ? 'Aufschlag' : 'Annahme');
+  const rotName = (rot) => `P${rot}`;
+  // Anzeigename einer Rolle auf einem Platz: die Mitte der Hinterreihe heißt Libero.
+  const shown = (id, slot) => R.displayLabel(id, slot).text;
 
-  function pickContext(s, rng) {
-    const rot = 1 + Math.floor(rng() * 6);
-    if (s.level === 'leicht') return { sys: SYSTEMS[s.system], rot, phase: 'receive', opts: {} };
-    const phase = pick(rng, ['serve', 'receive']);
-    if (s.level === 'mittel') return { sys: SYSTEMS[s.system], rot, phase, opts: { libero: true } };
-    const sys = SYSTEMS[pick(rng, Object.keys(SYSTEMS))];
-    const dsChoices = sys.base.filter((id) => PLAYERS[id].pair !== 'middle');
-    return { sys, rot, phase, opts: { libero: true, ds: pick(rng, dsChoices) } };
-  }
+  // Aussagen aus dem Playbook.
+  const STATEMENTS = [
+    { text: 'Unser Spielsystem ist das 5-1.', answer: true, explain: 'Playbook, Spielsystem: 5-1.' },
+    { text: 'Unser Spielsystem ist das 6-2.', answer: false, explain: 'Playbook, Spielsystem: 5-1.' },
+    { text: 'In der Annahme nehmen beide A und der Libero an.', answer: true, explain: 'Playbook, Annahme P1 bis P6: A, A und M/L bilden die Annahme.' },
+    { text: 'Die 7 heißt «Schuss».', answer: true, explain: 'Playbook, Angriffsvarianten: 7 = «Schuss».' },
+    { text: 'Die 0 ist auch schnell spielbar.', answer: true, explain: 'Playbook, Angriffsvarianten: 0 = auch schnell spielbar.' },
+    { text: 'Bei «6 und 1» ruft die Mitte spontan.', answer: true, explain: 'Playbook: Bei 6 und 1 ruft die Mitte spontan.' },
+    { text: 'Bei «6 und 1» ruft Dia spontan.', answer: false, explain: 'Playbook: Bei 6 und 1 ruft die Mitte spontan, bei 3 und 1 ruft Dia.' },
+    { text: 'Bei «3 und 1» ruft Dia spontan.', answer: true, explain: 'Playbook: Bei 3 und 1 ruft Dia spontan.' },
+    { text: 'Bei «3 und 1» ruft die Mitte spontan.', answer: false, explain: 'Playbook: Bei 3 und 1 ruft Dia spontan, bei 6 und 1 die Mitte.' },
+  ];
 
-  const homePositions = () => Object.fromEntries(R.SLOTS.map((slot) => [slot, { ...HOME_CELLS[slot] }]));
-  const courtOf = (c, pos, status = {}, lines = []) => ({
-    tokens: R.tokensFor(c.sys, c.rot, c.phase, pos, c.opts).map((t) => ({ ...t, status: status[t.slot] || '' })),
+  const courtOf = (rot, pos, status = {}, lines = []) => ({
+    tokens: R.tokensFor(rot, pos).map((t) => ({ ...t, status: status[t.slot] || '' })),
     lines,
   });
 
   // ---------- Fragen ----------
-  function legalQuestion(s, rng) {
-    const c = pickContext(s, rng);
+  function legalQuestion(rng) {
+    const rot = 1 + Math.floor(rng() * 6);
     const legal = rng() < 0.5;
-    const serverOutside = c.phase === 'serve' && s.level !== 'leicht' && rng() < 0.7;
-    const pos = R.randomFormation(rng, { legal, serverOutside });
-    const res = R.checkFormation(pos, { serving: c.phase === 'serve' });
+    const pos = R.randomFormation(rng, { legal });
+    const res = R.checkFormation(pos);
     const bad = {};
     res.violations.forEach((v) => { bad[v.rule.a] = 'bad'; bad[v.rule.b] = 'bad'; });
     const lines = res.violations.map((v) => ({
       x1: pos[v.rule.a].x, y1: pos[v.rule.a].y, x2: pos[v.rule.b].x, y2: pos[v.rule.b].y, cls: 'bad',
     }));
-    const explain = res.legal
-      ? (res.serverExempt
-        ? 'Legal. Der Aufschläger steht hinter der Endlinie und ist von den Überlappungsregeln ausgenommen. Alle anderen Nachbarn passen.'
-        : 'Legal. Alle Nachbarn in der Reihe und in der Spalte stehen in der richtigen Reihenfolge.')
-      : `Fehlstellung: ${res.violations.map((v) => v.text).join(' ')}`;
     return {
-      prompt: `${c.sys.name}, Rotation ${c.rot}, ${phaseName(c.phase)}: Ist diese Aufstellung legal?`,
+      prompt: `${rotName(rot)}: Ist diese Aufstellung legal?`,
       options: ['Legal', 'Fehlstellung'],
       answer: res.legal ? 0 : 1,
-      explain,
-      court: courtOf(c, pos),
-      reveal: courtOf(c, pos, bad, lines),
-      sys: c.sys.id,
-      rot: c.rot,
+      explain: res.legal
+        ? 'Legal. Alle Nachbarn in der Reihe und in der Spalte stehen in der richtigen Reihenfolge.'
+        : `Fehlstellung: ${res.violations.map((v) => v.text).join(' ')}`,
+      court: courtOf(rot, pos),
+      reveal: courtOf(rot, pos, bad, lines),
+      rot,
     };
   }
 
-  function whoServes(s, rng) {
-    const c = pickContext(s, rng);
-    const n = 1 + Math.floor(rng() * 5);
-    const ids = R.lineupFor(c.sys, c.rot);
-    const after = R.rotateLineup(ids, n);
-    const correct = after[0];
-    const options = shuffle(rng, [correct, ...shuffle(rng, ids.filter((id) => id !== correct)).slice(0, 3)]);
-    return {
-      prompt: `${c.sys.name}, Rotation ${c.rot} (siehe Feld). Nach ${n} Side-out${n > 1 ? 's' : ''}: Wer steht auf Position 1 und schlägt auf?`,
-      options: options.map((id) => `${PLAYERS[id].label} (${PLAYERS[id].name})`),
-      answer: options.indexOf(correct),
-      explain: `Jeder Side-out dreht im Uhrzeigersinn (Position 2 → 1 → 6 → 5 → 4 → 3 → 2). Nach ${n}× steht ${PLAYERS[correct].name} auf Position 1.`,
-      court: courtOf({ ...c, opts: {} }, homePositions()),
-      sys: c.sys.id,
-      rot: c.rot,
-    };
-  }
-
-  function whereAfter(s, rng) {
-    const c = pickContext(s, rng);
-    const ids = R.lineupFor(c.sys, c.rot);
+  function whoOnSlot(rng) {
+    const rot = 1 + Math.floor(rng() * 6);
+    const ids = R.lineupFor(rot);
     const slot = 1 + Math.floor(rng() * 6);
-    const id = ids[slot - 1];
-    const correct = slot === 1 ? 6 : slot - 1;
+    const correct = ids[slot - 1];
+    const roles = Object.keys(PLAYERS);
+    const options = shuffle(rng, [correct, ...shuffle(rng, roles.filter((id) => id !== correct)).slice(0, 3)]);
+    return {
+      prompt: `${rotName(rot)} (Passeur auf Position ${rot}): Wer steht auf Position ${slot}?`,
+      options: options.map((id) => PLAYERS[id].label),
+      answer: options.indexOf(correct),
+      explain: `In ${rotName(rot)} steht ${PLAYERS[correct].name} (${PLAYERS[correct].label}) auf Position ${slot}. Die Reihenfolge im Uhrzeigersinn ist P, A¹, M², D, A², M¹.`,
+      court: null,
+      rot,
+    };
+  }
+
+  function slotOfRole(rng) {
+    const rot = 1 + Math.floor(rng() * 6);
+    const ids = R.lineupFor(rot);
+    const id = pick(rng, ids);
+    const correct = ids.indexOf(id) + 1;
     const options = shuffle(rng, [correct, ...shuffle(rng, R.SLOTS.filter((p) => p !== correct)).slice(0, 3)]);
     return {
-      prompt: `${c.sys.name}, Rotation ${c.rot}: ${PLAYERS[id].name} (${PLAYERS[id].label}) steht auf Position ${slot}. Auf welcher Position steht sie oder er nach einem Side-out?`,
+      prompt: `${rotName(rot)} (Passeur auf Position ${rot}): Auf welcher Position steht ${PLAYERS[id].label} (${PLAYERS[id].name})?`,
       options: options.map((p) => `Position ${p}`),
       answer: options.indexOf(correct),
-      explain: `Im Uhrzeigersinn drehen heißt: Position ${slot} → Position ${correct}.`,
-      court: courtOf({ ...c, opts: {} }, homePositions()),
-      sys: c.sys.id,
-      rot: c.rot,
+      explain: `In ${rotName(rot)} steht ${PLAYERS[id].label} auf Position ${correct}.`,
+      court: null,
+      rot,
     };
   }
 
-  function liberoQuestion(s, rng) {
-    const c = { ...pickContext(s, rng), phase: 'receive' };
-    c.opts = { ...c.opts, libero: true };
-    const ids = R.lineupFor(c.sys, c.rot);
-    const cands = R.SLOTS.filter((p) => PLAYERS[ids[p - 1]].pair === 'middle' && [5, 6, 1, 2].includes(p));
-    const slot = pick(rng, cands);
-    const m = PLAYERS[ids[slot - 1]];
-    const court = courtOf(c, homePositions());
-    const base = { court, sys: c.sys.id, rot: c.rot };
-    if (slot === 2) {
-      return {
-        ...base,
-        prompt: `Rotation ${c.rot}: ${m.label} steht vorn auf Position 2 und rotiert beim nächsten Side-out auf Position 1. Wer schlägt auf?`,
-        options: [`${m.label} schlägt selbst auf`, 'Der Libero schlägt auf'],
-        answer: 0,
-        explain: 'Der Libero darf nicht aufschlagen. Die Mittelblockerin oder der Mittelblocker schlägt selbst auf.',
-      };
-    }
-    const mustLeave = slot === 5;
-    const stay = `Der Libero bleibt, ${m.label} bleibt in der Hinterreihe (Position ${slot === 1 ? 6 : slot - 1}).`;
-    const leave = `Der Libero muss raus, ${m.label} spielt vorn auf Position 4.`;
-    const options = shuffle(rng, [leave, stay]);
+  function liberoQuestion(rng) {
+    const rot = 1 + Math.floor(rng() * 6);
+    const ids = R.lineupFor(rot);
+    const correct = ids.findIndex((id, i) => R.displayLabel(id, i + 1).kind === 'libero') + 1;
+    const options = shuffle(rng, [correct, ...shuffle(rng, R.SLOTS.filter((p) => p !== correct)).slice(0, 3)]);
     return {
-      ...base,
-      prompt: `Rotation ${c.rot}: Der Libero spielt für ${m.label} auf Position ${slot}. Was passiert beim nächsten Side-out?`,
-      options,
-      answer: options.indexOf(mustLeave ? leave : stay),
-      explain: mustLeave
-        ? 'Rotiert die Mitte von 5 nach 4, kommt sie in die Vorderreihe. Der Libero darf nur hinten spielen und muss raus.'
-        : 'Die Mitte bleibt hinten, also darf der Libero weiterspielen.',
+      prompt: `${rotName(rot)}: Auf welcher Position spielt der Libero (für die Mitte der Hinterreihe)?`,
+      options: options.map((p) => `Position ${p}`),
+      answer: options.indexOf(correct),
+      explain: `In ${rotName(rot)} steht ${shown(ids[correct - 1], correct)} auf Position ${correct}: ${PLAYERS[ids[correct - 1]].label} wird durch den Libero ersetzt.`,
+      court: null,
+      rot,
     };
   }
 
-  function statementQuestion(s, rng) {
-    const tags = { leicht: ['rotation'], mittel: ['rotation', 'libero'], schwer: ['rotation', 'libero', 'ds'] }[s.level];
-    const st = pick(rng, STATEMENTS.filter((x) => x.tags.some((t) => tags.includes(t))));
-    return { prompt: st.text, options: ['Wahr', 'Falsch'], answer: st.answer ? 0 : 1, explain: st.explain, court: null, sys: null, rot: null, statement: st.text };
+  function rowQuestion(rng) {
+    const rot = 1 + Math.floor(rng() * 6);
+    const ids = R.lineupFor(rot);
+    const slot = 1 + Math.floor(rng() * 6);
+    const id = ids[slot - 1];
+    const front = R.isFront(slot);
+    return {
+      prompt: `${rotName(rot)}: ${PLAYERS[id].label} steht auf Position ${slot}. Vorder- oder Hinterreihe?`,
+      options: ['Vorderreihe', 'Hinterreihe'],
+      answer: front ? 0 : 1,
+      explain: `Die Positionen 2, 3 und 4 sind die Vorderreihe, 5, 6 und 1 die Hinterreihe. Position ${slot}: ${front ? 'Vorderreihe' : 'Hinterreihe'}.`,
+      court: null,
+      rot,
+    };
   }
 
-  function rotationQuestion(s, rng) {
-    const gens = [whoServes, whereAfter, statementQuestion];
-    if (s.level !== 'leicht') gens.push(liberoQuestion);
-    return pick(rng, gens)(s, rng);
+  function statementQuestion(rng) {
+    const st = pick(rng, STATEMENTS);
+    return { prompt: st.text, options: ['Wahr', 'Falsch'], answer: st.answer ? 0 : 1, explain: st.explain, court: null, rot: null, statement: st.text };
   }
 
-  function buildRound(kind, s, rng) {
-    const make = kind === 'legal' ? legalQuestion : rotationQuestion;
+  const playbookQuestion = (rng) => pick(rng, [whoOnSlot, slotOfRole, liberoQuestion, rowQuestion, statementQuestion])(rng);
+
+  function buildRound(kind, rng) {
+    const make = kind === 'legal' ? legalQuestion : playbookQuestion;
     const seen = new Set();
     const out = [];
     for (let i = 0; i < 200 && out.length < ROUND; i += 1) {
-      const q = make(s, rng);
+      const q = make(rng);
       if (q.statement && seen.has(q.statement)) continue;
       if (q.statement) seen.add(q.statement);
       out.push(q);
@@ -151,7 +140,7 @@
   // ---------- Ablauf ----------
   function startQuiz(kind, ctx) {
     const { state: s, court, panel, onScore } = ctx;
-    let questions = buildRound(kind, s, Math.random);
+    let questions = buildRound(kind, Math.random);
     let idx = 0;
     let right = 0;
     let timerId = null;
@@ -169,14 +158,14 @@
       court.setOverlay({});
       panel.innerHTML = `<h2>Runde fertig</h2><p class="big">${right} von ${questions.length} richtig</p>
         <button type="button" id="again" class="primary">Nochmal</button>`;
-      panel.querySelector('#again').addEventListener('click', () => { questions = buildRound(kind, s, Math.random); idx = 0; right = 0; ask(); });
+      panel.querySelector('#again').addEventListener('click', () => { questions = buildRound(kind, Math.random); idx = 0; right = 0; ask(); });
     }
 
     function answer(q, choice) {
       stopTimer();
       const ok = choice === q.answer;
       if (ok) right += 1;
-      onScore(q.sys, q.rot, ok);
+      onScore(q.rot, ok);
       if (q.reveal) showCourt(q.reveal, true);
       panel.querySelectorAll('.opt').forEach((b, i) => {
         b.disabled = true;

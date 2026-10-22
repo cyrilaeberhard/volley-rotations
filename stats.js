@@ -1,6 +1,6 @@
 // Fortschritt in localStorage: Punkte, Streak, Trefferquote je Rotation.
 (function () {
-  const KEY = 'vr-stats-v1';
+  const KEY = 'vr-stats-v2';
   const empty = () => ({ points: 0, streak: 0, best: 0, byRot: {} });
 
   function load() {

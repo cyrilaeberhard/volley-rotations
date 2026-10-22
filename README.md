@@ -1,33 +1,25 @@
-# Volley-Rotationen üben
+# Volley-Rotationen üben (Playbook Volero Aarberg 2026/27)
 
-Webapp zum Üben von Volleyball-Rotationen, Überlappungsregeln, Stacking und Switching (5-1, 6-2, 4-2).
-Reine statische Dateien: `index.html` per Doppelklick öffnen, kein Build, kein Server nötig.
+Webapp zum Üben der Aufstellungen aus dem Playbook (1. Liga Herren, System 5-1).
+Reine statische Dateien: `index.html` öffnen, kein Build. Es gilt nur, was im Playbook steht.
+
+Rotationen heißen wie im Playbook P1 bis P6: Der Passeur steht auf Position n.
 
 ## Modi
-1. **Formation legen**: Spieler ziehen, Überlappung wird geprüft.
-2. **Legal oder Fehler**: Aufstellung beurteilen, 10er-Runden.
-3. **Rotationsquiz**: Rotation, Libero, Regel-Aussagen.
-4. **Stack & Switch**: Stack stellen (grün/gelb/rot), danach Wechsel nach dem Aufschlag.
-5. **Lernmodus**: Film der Abläufe. Stack, Übergang, Angriffsbereit, Absicherung, Wechsel, Abwehr; danach Side-out mit Drehung und Aufschlag in der nächsten Rotation. 5-1 exakt nach dem Plan-PDF, 6-2 und 4-2 berechnet. Annehmer sind gelb umrandet (immer drei).
-6. **Simulation**: Live-Ballwechsel mit sichtbarem Ball. Aufschlag, Annahme, Zuspiel, Angriff, Absicherung, Punktestand, Side-out mit Drehung. Ausgang zufällig oder erzwungen, Tempo wählbar.
-
-Menü: System, Rotation, Phase (Aufschlag/Annahme), Libero, DS, Stufe, Zeitlimit.
-Punkte und Trefferquote liegen lokal in `localStorage`.
+1. **Lernfilm**: Basis Aufstellung, Annahme Pn (Skizze), Angriffswege (Pfeile), Defence.
+2. **Formation**: Spieler ziehen, Überlappung wird geprüft.
+3. **Stellen**: Annahme Pn und Defence wie im Playbook stellen.
+4. **Legal?**: Aufstellung beurteilen.
+5. **Quiz**: Positionen, Libero, Aussagen aus dem Playbook.
 
 ## Dateien
-- `data.js`: Feld, Rollen, Systeme, Zielpunkte, Regel-Aussagen
-- `pdf-plans.js`: aus dem PDF ausgelesene Positionen und deutsche Texte (5-1)
-- `plans.js`: Abläufe für den Lernmodus, Ideal-Stack für Modus 4
-- `rules.js`: Regel-Engine ohne UI (Rotation, Überlappung, Ideal-Stack, Zufallsaufstellungen)
-- `court.js`: SVG-Feld mit Drag-and-drop
-- `quiz.js`: Quiz-Modi 2 und 3
-- `sim.js`: Simulation (Ballwechsel, Läufer, Punktestand)
-- `stats.js`: Fortschritt
-- `ui.js`: Menü und Modi 1, 4, 5
-- `rules.test.js`, `plans.test.js`, `sim.test.js`, `audit.test.js`: Tests, `for f in rules plans sim audit; do node $f.test.js; done`
+- `data.js`: Feld, Rollen, 5-1-Reihenfolge
+- `playbook.js`: Positionen aus den Skizzen (Basis, Annahme P1 bis P6, Defence)
+- `rules.js`: Rotation, Überlappung, Bewertung, Zufallsaufstellungen
+- `court.js`, `ui.js`, `quiz.js`, `stats.js`: Oberfläche
+- Tests: `node rules.test.js && node playbook.test.js`
 
-## Hinweise zu den Regeln
-Grundlage ist das Plan-PDF (5-1). Der Ideal-Stack wird berechnet: Jeder Spieler soll möglichst nah an seine Position nach dem Wechsel,
-unter Einhaltung der Überlappungsregeln. Anker: beim Aufschlag die vordere Mitte, in der Annahme der Zuspieler
-(Zuspieler auf 4 oder 5: die vordere Außenangreiferin). Bei 6-2 und 4-2 gelten dieselben Grundregeln, es zählt nur,
-wann ein Zuspieler zuspielt (Hinterreihe bzw. Vorderreihe).
+## Herkunft der Zahlen
+Die Skizzen sind von Hand gezeichnet und wurden in Meter übertragen (Genauigkeit etwa 0,2 m).
+Korrigiert, weil die Skizze gegen die Überlappungsregel verstößt: P2 (Plätze 3/6, 0,15 m), P4 (Plätze 3/4, 0,42 m), P5 (Plätze 3, 4, 5, bis 1,03 m). P1, P3, P6 sind wie gezeichnet.
+Die Defence-Skizze gilt für alle Rotationen: A und M der Vorderreihe blocken, A der Hinterreihe steht tief, der Libero ersetzt die M der Hinterreihe.

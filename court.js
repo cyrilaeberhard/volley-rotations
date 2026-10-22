@@ -1,7 +1,7 @@
 // SVG-Spielfeld: eigene Hälfte, Netz oben, Spieler-Token (ziehbar), Geister-Punkte und Linien.
 (function () {
   const NS = 'http://www.w3.org/2000/svg';
-  const BOUNDS = { xMin: -0.6, xMax: 9.6, yMin: 0.35, yMax: 12 };
+  const BOUNDS = { xMin: -0.6, xMax: 9.6, yMin: 0.35, yMax: 9.4 };
 
   function node(tag, attrs, parent) {
     const e = document.createElementNS(NS, tag);
@@ -18,17 +18,15 @@
 
   function createCourt(svg, onMove, onTap) {
     svg.innerHTML = '';
-    svg.setAttribute('viewBox', '-1 -2.4 11 14.8');
+    svg.setAttribute('viewBox', '-1 -2.4 11 12.2');
     node('rect', { x: 0, y: -2, width: 9, height: 2, class: 'opp' }, svg);
     label(svg, 4.5, -0.8, 'Gegner', 'zone-label');
     node('rect', { x: 0, y: 0, width: 9, height: 9, class: 'court' }, svg);
-    node('rect', { x: 0, y: 9, width: 9, height: 3, class: 'serve-zone' }, svg);
     node('line', { x1: 0, y1: 3, x2: 9, y2: 3, class: 'line' }, svg);
     node('line', { x1: 0, y1: 0, x2: 9, y2: 0, class: 'net' }, svg);
     node('line', { x1: 0, y1: 9, x2: 9, y2: 9, class: 'line' }, svg);
     node('line', { x1: 0, y1: 0, x2: 0, y2: 9, class: 'line' }, svg);
     node('line', { x1: 9, y1: 0, x2: 9, y2: 9, class: 'line' }, svg);
-    label(svg, 4.5, 11.6, 'Aufschlagzone', 'zone-label');
     const cells = { 4: [1.5, 1.5], 3: [4.5, 1.5], 2: [7.5, 1.5], 5: [1.5, 6], 6: [4.5, 6], 1: [7.5, 6] };
     Object.entries(cells).forEach(([slot, [x, y]]) => label(svg, x, y + 0.5, slot, 'cell-number'));
 
